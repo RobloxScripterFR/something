@@ -19,8 +19,6 @@ local movevec = Vector3.zero
 local moveforce = nil
 local started, finished, spacekey, renderc
 local motors = {}
-local damageConnection = nil
-local autoRagdollDebounce = false
 
 local function nomoar()
 	if player.Character then
@@ -45,7 +43,7 @@ local function startmove(root)
 	moveforce.Name = "MoveForce"
 	moveforce.Force = Vector3.zero
 	moveforce.Parent = root
-	renderc = game:GetService("RunService").RenderStepped:Connect(function()
+	renderc = RunService.RenderStepped:Connect(function()
 		if isragdoll and moveforce and workspace.CurrentCamera then
 			local cam = workspace.CurrentCamera
 			local forward = Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z).Unit
@@ -65,9 +63,8 @@ local function stopmove()
 	moveforce = nil
 end
 
-local function unragdoll(char)
+local function endragdoll(char)
 	if not isragdoll then return end
-	
 	stopmove()
 	if started then started:Disconnect() end
 	if finished then finished:Disconnect() end
@@ -97,7 +94,7 @@ local function unragdoll(char)
 			Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Flying,
 			Enum.HumanoidStateType.Running, Enum.HumanoidStateType.Climbing,
 			Enum.HumanoidStateType.Landed,
-			}) do
+		}) do
 			humanoid:SetStateEnabled(st, true)
 		end
 		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
@@ -137,7 +134,7 @@ local function controls(char)
 	spacekey = uis.InputBegan:Connect(function(i, gpe)
 		if gpe then return end
 		if i.KeyCode == Enum.KeyCode.Space and isragdoll then
-			unragdoll(char)
+			endragdoll(char)
 		end
 	end)
 end
@@ -177,7 +174,7 @@ local function ragdoll(char)
 			Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Flying,
 			Enum.HumanoidStateType.Running, Enum.HumanoidStateType.Climbing,
 			Enum.HumanoidStateType.Landed,
-			}) do
+		}) do
 			humanoid:SetStateEnabled(st, false)
 		end
 		humanoid:ChangeState(Enum.HumanoidStateType.Physics)
@@ -185,47 +182,6 @@ local function ragdoll(char)
 	end
 
 	controls(char)
-end
-
-local function setupDamageDetection(char)
-	if damageConnection then
-		damageConnection:Disconnect()
-		damageConnection = nil
-	end
-	
-	if not char then return end
-	local humanoid = char:WaitForChild("Humanoid", 5)
-	if humanoid then
-		local lastHealth = humanoid.Health
-		damageConnection = humanoid.HealthChanged:Connect(function(health)
-			if health < lastHealth and not isragdoll and not autoRagdollDebounce and char.Parent then
-				autoRagdollDebounce = true
-				spawn(function()
-					ragdoll(char)
-					wait(3)
-					if isragdoll and char.Parent then
-						unragdoll(char)
-					end
-					autoRagdollDebounce = false
-				end)
-			end
-			lastHealth = health
-		end)
-	end
-end
-
-player.CharacterAdded:Connect(function(char)
-	spawn(function()
-		wait(1)
-		if player:FindFirstChild("Backpack") then
-			tool.Parent = player.Backpack
-		end
-		setupDamageDetection(char)
-	end)
-end)
-
-if player.Character and player.Character.Parent then
-	setupDamageDetection(player.Character)
 end
 
 tool.Equipped:Connect(function()
@@ -237,13 +193,11 @@ end)
 
 local clicked = false
 tool.Activated:Connect(function()
-	if not clicked and not isragdoll and player.Character then
+	if not clicked and not isragdoll then
 		clicked = true
 		ragdoll(player.Character)
-		spawn(function()
-			wait(0.5)
-			clicked = false
-		end)
+		task.wait(0.5)
+		clicked = false
 	end
 end)
 
@@ -251,7 +205,6 @@ tool.Unequipped:Connect(function()
 	if started then started:Disconnect() end
 	if finished then finished:Disconnect() end
 	if spacekey then spacekey:Disconnect() end
-	if damageConnection then damageConnection:Disconnect() end
 	coroutine.wrap(function()
 		for _, c in ipairs(animcon) do c:Disconnect() end
 		animcon = {}
@@ -260,58 +213,39 @@ tool.Unequipped:Connect(function()
 	isragdoll = false
 end)
 
-local playerGui = player:WaitForChild("PlayerGui")
-
-local screenGui = Instance.new("ScreenGui", playerGui)
-screenGui.Name = "RagdollPrompt"
-
-local frame = Instance.new("Frame", screenGui)
-frame.Size = UDim2.new(0, 300, 0, 150)
-frame.Position = UDim2.new(0.5, -150, 0.5, -75)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.BorderSizePixel = 0
-frame.Visible = false
-
-local textLabel = Instance.new("TextLabel", frame)
-textLabel.Size = UDim2.new(1, 0, 0.6, 0)
-textLabel.Position = UDim2.new(0, 0, 0, 0)
-textLabel.Text = "THIS WILL RESET YOU. ARE YOU SURE?"
-textLabel.TextColor3 = Color3.new(1, 1, 1)
-textLabel.BackgroundTransparency = 1
-textLabel.Font = Enum.Font.SourceSansBold
-textLabel.TextScaled = true
-
-local yesButton = Instance.new("TextButton", frame)
-yesButton.Size = UDim2.new(0.5, 0, 0.4, 0)
-yesButton.Position = UDim2.new(0, 0, 0.6, 0)
-yesButton.Text = "Yes"
-yesButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-yesButton.TextColor3 = Color3.new(1, 1, 1)
-yesButton.Font = Enum.Font.SourceSansBold
-yesButton.TextScaled = true
-
-local noButton = Instance.new("TextButton", frame)
-noButton.Size = UDim2.new(0.5, 0, 0.4, 0)
-noButton.Position = UDim2.new(0.5, 0, 0.6, 0)
-noButton.Text = "No"
-noButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-noButton.TextColor3 = Color3.new(1, 1, 1)
-noButton.Font = Enum.Font.SourceSansBold
-noButton.TextScaled = true
-
-frame.Visible = true
-
-yesButton.Activated:Connect(function()
-    frame.Visible = false
-    player.Character.Humanoid.Health = 0
-	game.StarterGui:SetCore("SendNotification", {
-		Title = "sick ragdoll",
-		Icon = "rbxassetid://16142074920",
-		Text = "It ragdolls you.",
-		Duration = "6"
-	})
+local uis = game:GetService("UserInputService")
+uis.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.G then
+		if not isragdoll then
+			ragdoll(player.Character)
+		else
+			endragdoll(player.Character)
+		end
+	end
 end)
 
-noButton.Activated:Connect(function()
-    frame.Visible = false
-end)
+local function hookHumanoid(char)
+	local hum = char:WaitForChild("Humanoid")
+	local lastHealth = hum.Health
+	hum.HealthChanged:Connect(function(newHealth)
+		if newHealth < lastHealth and hum.Health > 0 then
+			if not isragdoll then
+				ragdoll(char)
+				task.delay(2, function()
+					if isragdoll then
+						endragdoll(char)
+					end
+				end)
+			end
+		end
+		lastHealth = newHealth
+	end)
+end
+
+if player.Character then
+	hookHumanoid(player.Character)
+end
+player.CharacterAdded:Connect(hookHumanoid)
+
+tool.Parent = player.Backpack
