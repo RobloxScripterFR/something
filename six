@@ -1,5 +1,3 @@
-local ragspeed = 6000
-
 local player = game.Players.LocalPlayer
 local animcon = {}
 local tool = Instance.new("Tool")
