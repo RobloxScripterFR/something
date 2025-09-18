@@ -139,7 +139,7 @@ local function loadRagdollSystem()
 				Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Flying,
 				Enum.HumanoidStateType.Running, Enum.HumanoidStateType.Climbing,
 				Enum.HumanoidStateType.Landed,
-			}) do
+				}) do
 				humanoid:SetStateEnabled(st, true)
 			end
 			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
@@ -219,7 +219,7 @@ local function loadRagdollSystem()
 				Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Flying,
 				Enum.HumanoidStateType.Running, Enum.HumanoidStateType.Climbing,
 				Enum.HumanoidStateType.Landed,
-			}) do
+				}) do
 				humanoid:SetStateEnabled(st, false)
 			end
 			humanoid:ChangeState(Enum.HumanoidStateType.Physics)
@@ -274,7 +274,7 @@ local function loadRagdollSystem()
 		local hum = char:WaitForChild("Humanoid")
 		local lastHealth = hum.Health
 		hum.HealthChanged:Connect(function(newHealth)
-			if newHealth < lastHealth and hum.Health > 0 then
+			if newHealth < lastHealth and hum.Health > 15 then
 				if not isragdoll then
 					ragdoll(char)
 					task.delay(2, function()
@@ -301,4 +301,3 @@ noButton.Activated:Connect(function()
 	frame.Visible = false
 	screenGui:Destroy()
 end)
-
