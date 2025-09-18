@@ -1,303 +1,344 @@
-local player = game.Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local InsertService = game:GetService("InsertService")
+local TweenService = game:GetService("TweenService")
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RagdollStartupPrompt"
-screenGui.Parent = playerGui
+local player = Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local humanoid = char:WaitForChild("Humanoid")
+local rootPart = char:WaitForChild("HumanoidRootPart")
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 300, 0, 150)
-frame.Position = UDim2.new(0.5, -150, 0.5, -75)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.BorderSizePixel = 0
-frame.Parent = screenGui
 
-local textLabel = Instance.new("TextLabel")
-textLabel.Size = UDim2.new(1, 0, 0.6, 0)
-textLabel.Position = UDim2.new(0, 0, 0, 0)
-textLabel.Text = "Do you want to enable ragdoll?"
-textLabel.TextColor3 = Color3.new(1, 1, 1)
-textLabel.BackgroundTransparency = 1
-textLabel.Font = Enum.Font.SourceSansBold
-textLabel.TextScaled = true
-textLabel.Parent = frame
+local idleAnimId = "rbxassetid://91012669597131"
+local runAnimId = "rbxassetid://134900119855267"
 
-local yesButton = Instance.new("TextButton")
-yesButton.Size = UDim2.new(0.5, 0, 0.4, 0)
-yesButton.Position = UDim2.new(0, 0, 0.6, 0)
-yesButton.Text = "Yes"
-yesButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-yesButton.TextColor3 = Color3.new(1, 1, 1)
-yesButton.Font = Enum.Font.SourceSansBold
-yesButton.TextScaled = true
-yesButton.Parent = frame
 
-local noButton = Instance.new("TextButton")
-noButton.Size = UDim2.new(0.5, 0, 0.4, 0)
-noButton.Position = UDim2.new(0.5, 0, 0.6, 0)
-noButton.Text = "No"
-noButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-noButton.TextColor3 = Color3.new(1, 1, 1)
-noButton.Font = Enum.Font.SourceSansBold
-noButton.TextScaled = true
-noButton.Parent = frame
+local currentAnim = nil
+local isIdle = true
+local isWalking = false
+local bodyVelocity = nil
+local bodyPosition = nil
+local playAnother = false
+local animationCoroutine = nil
 
-local function loadRagdollSystem()
-	frame.Visible = false
 
-	local ragspeed = 6000
-	local animcon = {}
-	local tool = Instance.new("Tool")
-	local handle = Instance.new("Part")
-	local RunService = game:GetService('RunService')
-	tool.Name = "Ragdoll"
-	tool.CanBeDropped = false
-	tool.RequiresHandle = true
-	handle.Name = "Handle"
-	handle.Size = Vector3.new(1,1,1)
-	handle.Transparency = 1
-	handle.CanCollide = false
-	handle.Parent = tool
+local torso = char:FindFirstChild("Torso")
+local rs, ls, rh, lh, n, rj
+local rsc0, lsc0, rhc0, lhc0, rjc0, nc0
+local rst, lst, rht, lht, nt, rjt
 
-	local isragdoll = false
-	local movevec = Vector3.zero
-	local moveforce = nil
-	local started, finished, spacekey, renderc
-	local motors = {}
 
-	local function nomoar()
-		if player.Character then
-			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				local animator = humanoid:FindFirstChildOfClass("Animator")
-				if animator then
-					local con = animator.AnimationPlayed:Connect(function(track)
-						local id = track.Animation.AnimationId
-						if id:match("507766388") or id:match("507766666") or track.Name:lower():match("toolnone") then
-							track:Stop()
-						end
-					end)
-					table.insert(animcon, con)
-				end
-			end
-		end
-	end
+local originalWalkSpeed = humanoid.WalkSpeed
+humanoid.WalkSpeed = originalWalkSpeed + 4
 
-	local function startmove(root)
-		moveforce = Instance.new("BodyForce")
-		moveforce.Name = "MoveForce"
-		moveforce.Force = Vector3.zero
-		moveforce.Parent = root
-		renderc = RunService.RenderStepped:Connect(function()
-			if isragdoll and moveforce and workspace.CurrentCamera then
-				local cam = workspace.CurrentCamera
-				local forward = Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z).Unit
-				local right = Vector3.new(cam.CFrame.RightVector.X,0,cam.CFrame.RightVector.Z).Unit
-				local dir = (forward * movevec.Z + right * movevec.X)
-				if dir.Magnitude > 0 then
-					dir = dir.Unit
-				end
-				moveforce.Force = dir * ragspeed
-			end
-		end)
-	end
 
-	local function stopmove()
-		if renderc then renderc:Disconnect() end
-		if moveforce then moveforce:Destroy() end
-		moveforce = nil
-	end
+bodyVelocity = Instance.new("BodyVelocity")
+bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+bodyVelocity.Parent = rootPart
 
-	local function endragdoll(char)
-		if not isragdoll then return end
-		stopmove()
-		if started then started:Disconnect() end
-		if finished then finished:Disconnect() end
-		if spacekey then spacekey:Disconnect() end
+bodyPosition = Instance.new("BodyPosition")
+bodyPosition.MaxForce = Vector3.new(0, math.huge, 0)
+bodyPosition.P = 10000
+bodyPosition.D = 1000
+bodyPosition.Parent = rootPart
 
-		for _, d in ipairs(char:GetDescendants()) do
-			if (d:IsA("BallSocketConstraint") and d.Name=="RagdollConstraint")
-				or (d:IsA("Attachment") and d.Name:match("RagdollAttachment")) then
-				d:Destroy()
-			end
-		end
 
-		for _, data in ipairs(motors) do
-			local m = Instance.new("Motor6D")
-			m.Name = data.Name
-			m.Part0 = data.Part0
-			m.Part1 = data.Part1
-			m.C0 = data.C0
-			m.C1 = data.C1
-			m.Parent = data.Parent
-		end
-
-		local humanoid = char:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			for _, st in ipairs({
-				Enum.HumanoidStateType.GettingUp, Enum.HumanoidStateType.Jumping,
-				Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Flying,
-				Enum.HumanoidStateType.Running, Enum.HumanoidStateType.Climbing,
-				Enum.HumanoidStateType.Landed,
-				}) do
-				humanoid:SetStateEnabled(st, true)
-			end
-			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-			humanoid.PlatformStand = false
-		end
-
-		isragdoll = false
-	end
-
-	local function controls(char)
-		local root = char:FindFirstChild("HumanoidRootPart")
-		if root then
-			startmove(root)
-		end
-
-		local uis = game:GetService("UserInputService")
-		started = uis.InputBegan:Connect(function(input, gpe)
-			if gpe then return end
-			if input.UserInputType == Enum.UserInputType.Keyboard then
-				if input.KeyCode == Enum.KeyCode.W then movevec = Vector3.new(movevec.X,0,1) end
-				if input.KeyCode == Enum.KeyCode.S then movevec = Vector3.new(movevec.X,0,-1) end
-				if input.KeyCode == Enum.KeyCode.A then movevec = Vector3.new(-1,0,movevec.Z) end
-				if input.KeyCode == Enum.KeyCode.D then movevec = Vector3.new(1,0,movevec.Z) end
-			end
-		end)
-
-		finished = uis.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Keyboard then
-				if input.KeyCode == Enum.KeyCode.W or input.KeyCode == Enum.KeyCode.S then
-					movevec = Vector3.new(movevec.X,0,0)
-				elseif input.KeyCode == Enum.KeyCode.A or input.KeyCode == Enum.KeyCode.D then
-					movevec = Vector3.new(0,0,movevec.Z)
-				end
-			end
-		end)
-
-		spacekey = uis.InputBegan:Connect(function(i, gpe)
-			if gpe then return end
-			if i.KeyCode == Enum.KeyCode.Space and isragdoll then
-				endragdoll(char)
-			end
-		end)
-	end
-
-	local function ragdoll(char)
-		if isragdoll then return end
-		isragdoll = true
-		motors = {}
-
-		for _, motor in ipairs(char:GetDescendants()) do
-			if motor:IsA("Motor6D") and motor.Part0 and motor.Part1 then
-				table.insert(motors, {
-					Name = motor.Name, Parent = motor.Parent,
-					Part0 = motor.Part0, Part1 = motor.Part1,
-					C0 = motor.C0, C1 = motor.C1
-				})
-				local a0 = Instance.new("Attachment", motor.Part0)
-				a0.Name = "RagdollAttachment0"; a0.CFrame = motor.C0
-				local a1 = Instance.new("Attachment", motor.Part1)
-				a1.Name = "RagdollAttachment1"; a1.CFrame = motor.C1
-				local c = Instance.new("BallSocketConstraint", motor.Part0)
-				c.Name = "RagdollConstraint"; c.Attachment0 = a0; c.Attachment1 = a1
-				motor:Destroy()
-			end
-		end
-
-		for _, part in ipairs(char:GetChildren()) do
-			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-				part.CanCollide = true
-			end
-		end
-
-		local humanoid = char:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			for _, st in ipairs({
-				Enum.HumanoidStateType.GettingUp, Enum.HumanoidStateType.Jumping,
-				Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Flying,
-				Enum.HumanoidStateType.Running, Enum.HumanoidStateType.Climbing,
-				Enum.HumanoidStateType.Landed,
-				}) do
-				humanoid:SetStateEnabled(st, false)
-			end
-			humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-			humanoid.PlatformStand = true
-		end
-
-		controls(char)
-	end
-
-	tool.Equipped:Connect(function()
-		nomoar()
-		if isragdoll then
-			controls(player.Character)
-		end
-	end)
-
-	local clicked = false
-	tool.Activated:Connect(function()
-		if not clicked and not isragdoll then
-			clicked = true
-			ragdoll(player.Character)
-			task.wait(0.5)
-			clicked = false
-		end
-	end)
-
-	tool.Unequipped:Connect(function()
-		if started then started:Disconnect() end
-		if finished then finished:Disconnect() end
-		if spacekey then spacekey:Disconnect() end
-		coroutine.wrap(function()
-			for _, c in ipairs(animcon) do c:Disconnect() end
-			animcon = {}
-		end)()
-		stopmove()
-		isragdoll = false
-	end)
-
-	local uis = game:GetService("UserInputService")
-	uis.InputBegan:Connect(function(input, gpe)
-		if gpe then return end
-		if input.KeyCode == Enum.KeyCode.G then
-			if not isragdoll then
-				ragdoll(player.Character)
-			else
-				endragdoll(player.Character)
-			end
-		end
-	end)
-
-	local function hookHumanoid(char)
-		local hum = char:WaitForChild("Humanoid")
-		local lastHealth = hum.Health
-		hum.HealthChanged:Connect(function(newHealth)
-			if newHealth < lastHealth and hum.Health > 15 then
-				if not isragdoll then
-					ragdoll(char)
-					task.delay(2, function()
-						if isragdoll then
-							endragdoll(char)
-						end
-					end)
-				end
-			end
-			lastHealth = newHealth
-		end)
-	end
-
-	if player.Character then
-		hookHumanoid(player.Character)
-	end
-	player.CharacterAdded:Connect(hookHumanoid)
-
-	tool.Parent = player.Backpack
+local animator = humanoid:FindFirstChild("Animator")
+if animator then
+    animator.Parent = nil
 end
 
-yesButton.Activated:Connect(loadRagdollSystem)
-noButton.Activated:Connect(function()
-	frame.Visible = false
-	screenGui:Destroy()
+
+for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
+    track:Stop()
+end
+
+
+if torso then
+    rs = torso:FindFirstChild("Right Shoulder")
+    ls = torso:FindFirstChild("Left Shoulder")
+    rh = torso:FindFirstChild("Right Hip")
+    lh = torso:FindFirstChild("Left Hip")
+    n = torso:FindFirstChild("Neck")
+    rj = rootPart:FindFirstChild("RootJoint")
+    
+    if rs and ls and rh and lh and n and rj then
+        rsc0 = rs.C0
+        lsc0 = ls.C0
+        rhc0 = rh.C0
+        lhc0 = lh.C0
+        rjc0 = rj.C0
+        nc0 = n.C0
+    end
+end
+
+
+local script = Instance.new("LocalScript")
+local ArtificialHB = Instance.new("BindableEvent", script)
+ArtificialHB.Name = "Heartbeat"
+script:WaitForChild("Heartbeat")
+
+local frame = 1 / 60
+local tf = 0
+local allowframeloss = false
+local tossremainder = false
+local lastframe = tick()
+
+script.Heartbeat:Fire()
+
+RunService.Heartbeat:Connect(function(s, p)
+    tf = tf + s
+    if tf >= frame then
+        if allowframeloss then
+            script.Heartbeat:Fire()
+            lastframe = tick()
+        else
+            for i = 1, math.floor(tf / frame) do
+                pcall(function()
+                    script.Heartbeat:Fire()
+                end)
+            end
+            lastframe = tick()
+        end
+        if tossremainder then
+            tf = 0
+        else
+            tf = tf - frame * math.floor(tf / frame)
+        end
+    end
 end)
+
+local function swait(num)
+    if num == 0 or num == nil then
+        ArtificialHB.Event:Wait()
+    else
+        for i = 0, num do
+            ArtificialHB.Event:Wait()
+        end
+    end
+end
+
+
+local function getnext(tbl, number)
+    local c = 100
+    local rtrnv = 0
+    for i, v in pairs(tbl) do
+        if i > number and i - number < c then
+            c = i - number
+            rtrnv = i
+        end
+    end
+    return rtrnv
+end
+
+
+local function kftotbl(kf)
+    local tbl3 = {}
+    for i, v in pairs(kf:GetDescendants()) do
+        if v:IsA("Pose") then
+            tbl3[string.sub(v.Name, 1, 1) .. string.sub(v.Name, #v.Name, #v.Name)] = v.CFrame
+        end
+    end
+    return tbl3
+end
+
+
+local function stopAnim()
+    playAnother = true
+    pcall(function()
+        if rst then rst:Cancel() end
+        if rht then rht:Cancel() end
+        if lht then lht:Cancel() end
+        if lst then lst:Cancel() end
+        if nt then nt:Cancel() end
+        if rjt then rjt:Cancel() end
+    end)
+    
+    if animationCoroutine then
+        coroutine.close(animationCoroutine)
+        animationCoroutine = nil
+    end
+end
+
+
+local function playCustomAnim(animId, speed, customInstance)
+    if not torso or not rs or not ls or not rh or not lh or not n or not rj then return end
+    
+    stopAnim()
+    
+    speed = speed or 1
+    playAnother = false
+    
+    local animAsset
+    if customInstance then
+        animAsset = customInstance
+    else
+        animAsset = InsertService:LoadLocalAsset("rbxassetid://" .. animId)
+    end
+    
+    if not animAsset then return end
+    
+    animAsset.Parent = workspace
+    
+    local anim = {}
+    for i, v in pairs(animAsset:GetChildren()) do
+        if v:IsA("Keyframe") then
+            anim[v.Time] = kftotbl(v)
+        end
+    end
+    
+    local count = 0
+    local tsi = TweenInfo.new(1 / (30 * speed))
+    
+    animationCoroutine = coroutine.create(function()
+        while true do
+            if playAnother then
+                local deft = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+                rs.Transform = deft
+                ls.Transform = deft
+                lh.Transform = deft
+                rj.Transform = deft
+                n.Transform = deft
+                rh.Transform = deft
+                break
+            end
+            
+            for i, oasjdadlasdkadkldjkl in pairs(anim) do
+                local asdf = getnext(anim, count)
+                local v = anim[asdf]
+                
+                if playAnother then
+                    local deft = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+                    rs.Transform = deft
+                    ls.Transform = deft
+                    lh.Transform = deft
+                    rj.Transform = deft
+                    n.Transform = deft
+                    rh.Transform = deft
+                    break
+                end
+                
+                if isWalking and humanoid.MoveDirection == Vector3.new(0, 0, 0) then
+                    break
+                end
+                
+                count = asdf
+                swait(1 / (30 * speed))
+                
+                if playAnother then
+                    local deft = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+                    rs.Transform = deft
+                    ls.Transform = deft
+                    lh.Transform = deft
+                    rj.Transform = deft
+                    n.Transform = deft
+                    rh.Transform = deft
+                    break
+                end
+                
+
+                if v and char:FindFirstChild("Torso") then
+                    local scale = char:GetScale and char:GetScale() or 1
+                    
+                    if v["Lg"] then
+                        lht = TweenService:Create(char.Torso["Left Hip"], tsi, {Transform = CFrame.new(v["Lg"].p * scale) * v["Lg"].Rotation})
+                        lht:Play()
+                    end
+                    if v["Rg"] then
+                        rht = TweenService:Create(char.Torso["Right Hip"], tsi, {Transform = CFrame.new(v["Rg"].p * scale) * v["Rg"].Rotation})
+                        rht:Play()
+                    end
+                    if v["Lm"] then
+                        lst = TweenService:Create(char.Torso["Left Shoulder"], tsi, {Transform = CFrame.new(v["Lm"].p * scale) * v["Lm"].Rotation})
+                        lst:Play()
+                    end
+                    if v["Rm"] then
+                        rst = TweenService:Create(char.Torso["Right Shoulder"], tsi, {Transform = CFrame.new(v["Rm"].p * scale) * v["Rm"].Rotation})
+                        rst:Play()
+                    end
+                    if v["To"] then
+                        rjt = TweenService:Create(char.HumanoidRootPart["RootJoint"], tsi, {Transform = CFrame.new(v["To"].p * scale) * v["To"].Rotation})
+                        rjt:Play()
+                    end
+                    if v["Hd"] then
+                        nt = TweenService:Create(char.Torso["Neck"], tsi, {Transform = CFrame.new(v["Hd"].p * scale) * v["Hd"].Rotation})
+                        nt:Play()
+                    end
+                end
+            end
+        end
+    end)
+    
+    coroutine.resume(animationCoroutine)
+end
+
+
+local function getGroundPosition()
+    local raycast = workspace:Raycast(rootPart.Position, Vector3.new(0, -100, 0))
+    if raycast then
+    return raycast.Position.Y + 1
+    else
+        return rootPart.Position.Y
+    end
+end
+
+
+local function onMovementChanged()
+    local moveVector = humanoid.MoveDirection
+    
+    if moveVector.Magnitude > 0 then
+        -- Character is moving
+        if not isWalking then
+            isWalking = true
+            isIdle = false
+            playCustomAnim(runAnimId, 1)
+        end
+    else
+        -- Character is idle
+        if not isIdle then
+            isIdle = true
+            isWalking = false
+            wait(0.065)
+            if isIdle and not isWalking and humanoid.MoveDirection == Vector3.new(0, 0, 0) then
+                playCustomAnim(idleAnimId, 1)
+            end
+        end
+    end
+end
+
+
+humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(onMovementChanged)
+
+
+RunService.Heartbeat:Connect(function()
+    if rootPart and bodyPosition then
+        local targetY = getGroundPosition()
+        local currentPos = rootPart.Position
+        
+        -- Update target position to hover 1 stud above ground
+        bodyPosition.Position = Vector3.new(currentPos.X, targetY, currentPos.Z)
+        
+        -- Maintain horizontal movement
+        if humanoid.MoveDirection.Magnitude > 0 then
+            local moveDirection = humanoid.MoveDirection
+            bodyVelocity.Velocity = Vector3.new(
+                moveDirection.X * humanoid.WalkSpeed,
+                0,
+                moveDirection.Z * humanoid.WalkSpeed
+            )
+        else
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end)
+
+
+player.CharacterRemoving:Connect(function()
+    stopAnim()
+    if bodyVelocity then bodyVelocity:Destroy() end
+    if bodyPosition then bodyPosition:Destroy() end
+end)
+
+wait(0.1)
+onMovementChanged()
