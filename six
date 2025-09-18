@@ -67,7 +67,7 @@ end
 
 local function unragdoll(char)
 	if not isragdoll then return end
-
+	
 	stopmove()
 	if started then started:Disconnect() end
 	if finished then finished:Disconnect() end
@@ -190,21 +190,24 @@ end
 local function setupDamageDetection(char)
 	if damageConnection then
 		damageConnection:Disconnect()
+		damageConnection = nil
 	end
-
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	
+	if not char then return end
+	local humanoid = char:WaitForChild("Humanoid", 5)
 	if humanoid then
 		local lastHealth = humanoid.Health
 		damageConnection = humanoid.HealthChanged:Connect(function(health)
-			if health < lastHealth and not isragdoll and not autoRagdollDebounce then
+			if health < lastHealth and not isragdoll and not autoRagdollDebounce and char.Parent then
 				autoRagdollDebounce = true
-				ragdoll(char)
-
-				wait(3)
-				if isragdoll then
-					unragdoll(char)
-				end
-				autoRagdollDebounce = false
+				spawn(function()
+					ragdoll(char)
+					wait(3)
+					if isragdoll and char.Parent then
+						unragdoll(char)
+					end
+					autoRagdollDebounce = false
+				end)
 			end
 			lastHealth = health
 		end)
@@ -212,13 +215,16 @@ local function setupDamageDetection(char)
 end
 
 player.CharacterAdded:Connect(function(char)
-	wait(1)
-	tool.Parent = player.Backpack
-
-	setupDamageDetection(char)
+	spawn(function()
+		wait(1)
+		if player:FindFirstChild("Backpack") then
+			tool.Parent = player.Backpack
+		end
+		setupDamageDetection(char)
+	end)
 end)
 
-if player.Character then
+if player.Character and player.Character.Parent then
 	setupDamageDetection(player.Character)
 end
 
@@ -231,11 +237,13 @@ end)
 
 local clicked = false
 tool.Activated:Connect(function()
-	if not clicked and not isragdoll then
+	if not clicked and not isragdoll and player.Character then
 		clicked = true
 		ragdoll(player.Character)
-		wait(0.5)
-		clicked = false
+		spawn(function()
+			wait(0.5)
+			clicked = false
+		end)
 	end
 end)
 
@@ -294,8 +302,8 @@ noButton.TextScaled = true
 frame.Visible = true
 
 yesButton.Activated:Connect(function()
-	frame.Visible = false
-	player.Character.Humanoid.Health = 0
+    frame.Visible = false
+    player.Character.Humanoid.Health = 0
 	game.StarterGui:SetCore("SendNotification", {
 		Title = "sick ragdoll",
 		Icon = "rbxassetid://16142074920",
@@ -305,5 +313,5 @@ yesButton.Activated:Connect(function()
 end)
 
 noButton.Activated:Connect(function()
-	frame.Visible = false
+    frame.Visible = false
 end)
